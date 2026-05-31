@@ -9,31 +9,39 @@ class AppController {
 
     init() {
         ballViewController.delegate = self
-        setupClickWindow()
     }
 
-    private func setupClickWindow() {
-        //        clickWindow.contentViewController = NSViewController()
+    private func makeClickWindow(forBallID ballID: String) -> NSWindow {
         let catcher = MouseCatcherView()
-        clickWindow.contentView = catcher
         catcher.frame = CGRect(x: 0, y: 0, width: Constants.radius * 2, height: Constants.radius * 2)
         catcher.wantsLayer = true
         // This is needed so that the window accepts mouse events
         catcher.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.01).cgColor
         catcher.layer?.cornerRadius = Constants.radius
 
+        catcher.onMouseDown = { [weak self] in self?.ballViewController.onMouseDown(ballID: ballID) }
+        catcher.onMouseDrag = { [weak self] in self?.ballViewController.onMouseDrag(ballID: ballID) }
+        catcher.onMouseUp = { [weak self] in self?.ballViewController.onMouseUp(ballID: ballID) }
+        catcher.onScroll = { [weak self] in self?.ballViewController.onScroll(event: $0, ballID: ballID) }
 
-        catcher.onMouseDown = { [weak self] in self?.ballViewController.onMouseDown() }
-        catcher.onMouseDrag = { [weak self] in self?.ballViewController.onMouseDrag() }
-        catcher.onMouseUp = { [weak self] in self?.ballViewController.onMouseUp() }
-        catcher.onScroll = { [weak self] in self?.ballViewController.onScroll(event: $0) }
+        let clickWindow = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: Constants.radius * 2, height: Constants.radius * 2),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        clickWindow.contentView = catcher
+        clickWindow.isReleasedWhenClosed = false
+        clickWindow.level = .screenSaver
+        clickWindow.backgroundColor = NSColor.clear
+        return clickWindow
     }
 
     // MARK: - External actions
     func dockIconClicked() {
         guard let screen = NSScreen.main else { return }
 
-        if ballVisible {
+        if ballVisible, NSApp.currentEvent?.modifierFlags.contains(.option) == true {
             self.ballViewController.animatePutBack(rect: screen.inferredRectOfHoveredDockIcon) {
                 self.ballVisible = false
             }
@@ -52,13 +60,16 @@ class AppController {
             guard ballVisible != old else { return }
 
             ballWindowController.window!.setIsVisible(ballVisible)
-            clickWindow.setIsVisible(ballVisible)
 
             ballViewController.sceneView.isPaused = !ballVisible
-            showPutBackIcon = ballVisible
 
             if ballVisible {
-                updateClickWindowPosition()
+                updateClickWindowPositions()
+            } else {
+                for clickWindow in clickWindows.values {
+                    clickWindow.setIsVisible(false)
+                }
+                clickWindows.removeAll()
             }
         }
     }
@@ -69,46 +80,36 @@ class AppController {
         ballWindowController.window!.contentViewController as! BallViewController
     }
 
-    private lazy var clickWindow: NSWindow = {
-        let clickWindow = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: Constants.radius * 2, height: Constants.radius * 2),
-            styleMask: [],
-            backing: .buffered,
-            defer: false
-        )
-        clickWindow.isReleasedWhenClosed = false
-        clickWindow.level = .screenSaver // ?
-        clickWindow.backgroundColor = NSColor.clear
-        return clickWindow
-    }()
-
-    // MARK: - Dock icon
-    private var showPutBackIcon = false {
-        didSet {
-            if showPutBackIcon {
-                NSApp.dockTile.contentView = putBackDockView
-            } else {
-                NSApp.dockTile.contentView = nil
-            }
-            NSApp.dockTile.display()
-        }
-    }
-    private let putBackDockView = NSImageView(image: NSImage(named: "PutBack")!)
+    private var clickWindows = [String: NSWindow]()
 }
 
 extension AppController: BallViewControllerDelegate {
-    func ballViewController(_ vc: BallViewController, ballDidMoveToPosition pos: CGRect) {
-        updateClickWindowPosition()
+    func ballViewController(_ vc: BallViewController, ballsDidMoveToPositions positions: [String: CGRect]) {
+        updateClickWindowPositions()
     }
 
-    fileprivate func updateClickWindowPosition() {
-        guard ballVisible, var rect = ballViewController.targetMouseCatcherRect else { return }
-        let rounding: CGFloat = 10
-        rect.origin.x = round(rect.minX / rounding) * rounding
-        rect.origin.y = round(rect.minY / rounding) * rounding
-        // HACK: Assume scene coords are same as window coords
+    fileprivate func updateClickWindowPositions() {
+        guard ballVisible else { return }
         guard let window = self.ballWindowController.window, let screen = window.screen else { return }
-        rect = rect.byConstraining(withinBounds: screen.frame)
-        clickWindow.setFrame(rect, display: false)
+        let rects = ballViewController.targetMouseCatcherRects
+        let activeIDs = Set(rects.keys)
+
+        for ballID in Array(clickWindows.keys) where !activeIDs.contains(ballID) {
+            clickWindows[ballID]?.setIsVisible(false)
+            clickWindows.removeValue(forKey: ballID)
+        }
+
+        for (ballID, var rect) in rects {
+            let rounding: CGFloat = 10
+            rect.origin.x = round(rect.minX / rounding) * rounding
+            rect.origin.y = round(rect.minY / rounding) * rounding
+            // HACK: Assume scene coords are same as window coords
+            rect = rect.byConstraining(withinBounds: screen.frame)
+
+            let clickWindow = clickWindows[ballID] ?? makeClickWindow(forBallID: ballID)
+            clickWindows[ballID] = clickWindow
+            clickWindow.setFrame(rect, display: false)
+            clickWindow.setIsVisible(true)
+        }
     }
 }

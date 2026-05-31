@@ -1,5 +1,10 @@
 import SpriteKit
 
+enum PhysicsCategory {
+    static let ball: UInt32 = 1 << 0
+    static let wall: UInt32 = 1 << 1
+}
+
 class Ball: SKNode {
     let id: String
 
@@ -37,7 +42,9 @@ class Ball: SKNode {
         body.restitution = 0.6
         body.allowsRotation = false
         body.usesPreciseCollisionDetection = true
-        body.contactTestBitMask = 1
+        body.categoryBitMask = PhysicsCategory.ball
+        body.collisionBitMask = PhysicsCategory.ball | PhysicsCategory.wall
+        body.contactTestBitMask = PhysicsCategory.ball | PhysicsCategory.wall
         self.physicsBody = body
 
         addChild(shadowContainer)

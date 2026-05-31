@@ -3,7 +3,7 @@ import SpriteKit
 import SwiftUI
 
 protocol BallViewControllerDelegate: AnyObject {
-    func ballViewController(_ vc: BallViewController, ballDidMoveToPosition pos: CGRect)
+    func ballViewController(_ vc: BallViewController, ballsDidMoveToPositions positions: [String: CGRect])
 }
 
 class BallViewController: NSViewController {
@@ -16,26 +16,19 @@ class BallViewController: NSViewController {
         NSSound(contentsOf: Bundle.main.url(forResource: id, withExtension: "caf")!, byReference: true)!
     }
 
-    var targetMouseCatcherRect: CGRect? {
-        if let rect = tempOverrideMouseCatcherRect ?? ball?.rect, let win = self.view.window {
-            return win.convertToScreen(rect)
+    var targetMouseCatcherRects: [String: CGRect] {
+        guard let win = self.view.window else { return [:] }
+        var rects = [String: CGRect]()
+        for ball in balls {
+            let rect = tempOverrideMouseCatcherRects[ball.id] ?? ball.rect
+            rects[ball.id] = win.convertToScreen(rect)
         }
-        return nil
+        return rects
     }
 
-    private var tempOverrideMouseCatcherRect: CGRect?
+    private var tempOverrideMouseCatcherRects = [String: CGRect]()
 
-    var ball: Ball? {
-        didSet(old) {
-            old?.removeFromParent()
-            old?.physicsBody = nil
-//            old?.view.removeFromSuperview()
-            if let ball {
-                scene.addChild(ball)
-//                view.addSubview(ball.view)
-            }
-        }
-    }
+    private var balls = [Ball]()
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -61,12 +54,15 @@ class BallViewController: NSViewController {
         scene.size = view.bounds.size
         sceneView.frame = view.bounds
         scene.physicsBody = SKPhysicsBody(edgeLoopFrom: view.bounds)
-        scene.physicsBody?.contactTestBitMask = 1
+        scene.physicsBody?.categoryBitMask = PhysicsCategory.wall
+        scene.physicsBody?.collisionBitMask = PhysicsCategory.ball
+        scene.physicsBody?.contactTestBitMask = PhysicsCategory.ball
     }
 
     // MARK: - Mouse handling
 
     private struct DragState {
+        var ballID: String
         var ballStart: CGPoint
         var mouseStart: CGPoint
         var currentMousePos: CGPoint
@@ -79,30 +75,40 @@ class BallViewController: NSViewController {
     }
 
     private var dragState: DragState? {
-        didSet {
-            if let dragState, let ball {
+        didSet(oldValue) {
+            if oldValue?.ballID != dragState?.ballID, let oldBallID = oldValue?.ballID {
+                let oldBall = ball(withID: oldBallID)
+                oldBall?.physicsBody?.isDynamic = true
+                oldBall?.beingDragged = false
+            }
+
+            if let dragState, let ball = ball(withID: dragState.ballID) {
                 ball.physicsBody?.isDynamic = false
                 let pos = dragState.currentBallPos
                 let rect = CGRect(origin: .init(x: pos.x - ball.radius, y: pos.y - ball.radius), size: .init(width: ball.radius * 2, height: ball.radius * 2))
                 let constrainedRect = rect.byConstraining(withinBounds: view.bounds)
                 ball.position = CGPoint(x: constrainedRect.midX, y: constrainedRect.midY)
-            } else {
-               ball?.physicsBody?.isDynamic = true
+                ball.beingDragged = true
+            } else if let oldValue {
+                self.ball(withID: oldValue.ballID)?.physicsBody?.isDynamic = true
             }
-            ball?.beingDragged = dragState != nil
         }
     }
 
-    func onMouseDown() {
+    func onMouseDown(ballID: String? = nil) {
         let scenePos = mouseScenePos
-        if let ball, ball.contains(scenePos) {
-            self.dragState = .init(ballStart: ball.position, mouseStart: scenePos, currentMousePos: scenePos)
+        var hitBall = ball(containing: scenePos)
+        if hitBall == nil, let ballID {
+            hitBall = self.ball(withID: ballID)
+        }
+        if let hitBall {
+            self.dragState = .init(ballID: hitBall.id, ballStart: hitBall.position, mouseStart: scenePos, currentMousePos: scenePos)
         } else {
             self.dragState = nil
         }
     }
 
-    func onMouseDrag() {
+    func onMouseDrag(ballID: String? = nil) {
         if var dragState {
             dragState.currentMousePos = mouseScenePos
             dragState.velocityTracker.add(pos: dragState.currentMousePos)
@@ -110,7 +116,13 @@ class BallViewController: NSViewController {
         }
     }
 
-    func onMouseUp() {
+    func onMouseUp(ballID: String? = nil) {
+        let ball: Ball?
+        if let dragState {
+            ball = self.ball(withID: dragState.ballID)
+        } else {
+            ball = nil
+        }
         let velocity = dragState?.velocityTracker.velocity ?? .zero
         self.dragState = nil
 
@@ -119,12 +131,17 @@ class BallViewController: NSViewController {
         }
     }
 
-    func onScroll(event: NSEvent) {
+    func onScroll(event: NSEvent, ballID: String? = nil) {
         switch event.phase {
         case .began:
-            if let ball {
-                dragState = .init(ballStart: ball.position, mouseStart: .zero, currentMousePos: .zero)
-                tempOverrideMouseCatcherRect = targetMouseCatcherRect
+            let scenePos = mouseScenePos
+            var hitBall = ball(containing: scenePos)
+            if hitBall == nil, let ballID {
+                hitBall = self.ball(withID: ballID)
+            }
+            if let hitBall {
+                dragState = .init(ballID: hitBall.id, ballStart: hitBall.position, mouseStart: .zero, currentMousePos: .zero)
+                tempOverrideMouseCatcherRects[hitBall.id] = hitBall.rect
             }
         case .changed:
             if var dragState {
@@ -134,6 +151,12 @@ class BallViewController: NSViewController {
                 self.dragState = dragState
             }
         case .ended, .cancelled:
+            let ball: Ball?
+            if let dragState {
+                ball = self.ball(withID: dragState.ballID)
+            } else {
+                ball = nil
+            }
             let velocity = dragState?.velocityTracker.velocity ?? .zero
             self.dragState = nil
 
@@ -141,7 +164,7 @@ class BallViewController: NSViewController {
                 ball?.physicsBody?.applyImpulse(CGVector(dx: velocity.x, dy: velocity.y))
             }
             
-            tempOverrideMouseCatcherRect = nil
+            tempOverrideMouseCatcherRects.removeAll()
         default: ()
         }
     }
@@ -153,13 +176,16 @@ class BallViewController: NSViewController {
     }
 
     // MARK: - Animations
-    func animateBallFromRect(_ rect: CGRect) {
-        guard let screen = self.view.window?.screen else { return }
+    @discardableResult
+    func animateBallFromRect(_ rect: CGRect) -> Ball? {
+        guard let screen = self.view.window?.screen else { return nil }
         var targetRect = rect
         targetRect = targetRect.byConstraining(withinBounds: screen.frame)
 
+        let spawnIndex = balls.count
         let ball = Ball(radius: Constants.radius, pos: .init(x: targetRect.midX, y: targetRect.midY), id: UUID().uuidString)
-        self.ball = ball
+        balls.append(ball)
+        scene.addChild(ball)
 
         dragState = nil
         // self.ball?.position = CGPoint(x: targetRect.midX, y: targetRect.midY)
@@ -178,6 +204,9 @@ class BallViewController: NSViewController {
         } else if distFromRight < 200 {
             impulse.dx = -strength
         }
+        let spawnFan = CGFloat((spawnIndex % 5) - 2)
+        impulse.dx += spawnFan * 250
+        impulse.dy += CGFloat(spawnIndex % 3) * 80
 
         ball.setScale(rect.width / (ball.radius * 2))
         let scaleUp = SKAction.scale(to: 1, duration: 0.5)
@@ -190,36 +219,61 @@ class BallViewController: NSViewController {
             ball.position = CGPoint(x: targetRect.midX, y: targetRect.midY)
             ball.physicsBody?.applyImpulse(impulse)
         }
+
+        return ball
     }
 
     func animatePutBack(rect: CGRect, completion: @escaping () -> Void) {
-        guard let ball else {
+        let ballsToRemove = balls
+        guard !ballsToRemove.isEmpty else {
             completion()
             return
         }
         dragState = nil
+        tempOverrideMouseCatcherRects.removeAll()
 
-        ball.physicsBody?.isDynamic = false
-        ball.physicsBody?.affectedByGravity = false
-        ball.physicsBody?.velocity = .zero
+        var remaining = ballsToRemove.count
+        for ball in ballsToRemove {
+            ball.physicsBody?.isDynamic = false
+            ball.physicsBody?.affectedByGravity = false
+            ball.physicsBody?.velocity = .zero
 
-        let scale = SKAction.scale(to: rect.width / (ball.radius * 2), duration: 0.25)
-        ball.animateShadow(visible: false, duration: 0.25)
-        ball.run(scale)
-        let move = SKAction.move(to: CGPoint(x: rect.midX, y: rect.midY), duration: 0.25)
-        ball.run(move) {
-            self.ball = nil
-            completion()
+            let scale = SKAction.scale(to: rect.width / (ball.radius * 2), duration: 0.25)
+            ball.animateShadow(visible: false, duration: 0.25)
+            ball.run(scale)
+            let move = SKAction.move(to: CGPoint(x: rect.midX, y: rect.midY), duration: 0.25)
+            ball.run(move) {
+                self.removeBall(ball)
+                remaining -= 1
+                if remaining == 0 {
+                    completion()
+                }
+            }
         }
     }
 
     fileprivate var nextRenderBlocks = [() -> Void]()
+
+    private func ball(withID id: String) -> Ball? {
+        balls.first { $0.id == id }
+    }
+
+    private func ball(containing point: CGPoint) -> Ball? {
+        balls.reversed().first { $0.contains(point) }
+    }
+
+    private func removeBall(_ ball: Ball) {
+        ball.removeFromParent()
+        ball.physicsBody = nil
+        balls.removeAll { $0 === ball }
+    }
 }
 
 extension BallViewController: SKSceneDelegate {
     func update(_ currentTime: TimeInterval, for scene: SKScene) {
-        if let ball {
-            delegate?.ballViewController(self, ballDidMoveToPosition: ball.rect)
+        if !balls.isEmpty {
+            let positions = Dictionary(uniqueKeysWithValues: balls.map { ($0.id, $0.rect) })
+            delegate?.ballViewController(self, ballsDidMoveToPositions: positions)
         }
     }
 
@@ -232,7 +286,7 @@ extension BallViewController: SKSceneDelegate {
     }
 
     func didFinishUpdate(for scene: SKScene) {
-        if let ball {
+        for ball in balls {
             ball.update()
 //            ball.view.setCenter(CGPoint(x: ball.position.x, y: ball.position.y))
         }
@@ -253,7 +307,10 @@ extension BallViewController: SKPhysicsContactDelegate {
         let collisionStrength = remap(x: contact.collisionImpulse, domainStart: minImpulse, domainEnd: maxImpulse, rangeStart: 0, rangeEnd: 0.5)
         guard collisionStrength > 0 else { return }
 
-        ball?.didCollide(strength: collisionStrength, normal: contact.contactNormal)
+        let bodyABall = contact.bodyA.node as? Ball
+        let bodyBBall = contact.bodyB.node as? Ball
+        bodyABall?.didCollide(strength: collisionStrength, normal: contact.contactNormal)
+        bodyBBall?.didCollide(strength: collisionStrength, normal: CGVector(dx: -contact.contactNormal.dx, dy: -contact.contactNormal.dy))
 
         DispatchQueue.global().async {
             var sounds = self.collisionSounds
