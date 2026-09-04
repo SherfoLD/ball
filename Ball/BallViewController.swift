@@ -183,7 +183,13 @@ class BallViewController: NSViewController {
         targetRect = targetRect.byConstraining(withinBounds: screen.frame)
 
         let spawnIndex = balls.count
-        let ball = Ball(radius: Constants.radius, pos: .init(x: targetRect.midX, y: targetRect.midY), id: UUID().uuidString)
+        let color = Ball.Color.allCases.randomElement() ?? .red
+        let ball = Ball(
+            radius: Constants.radius,
+            pos: .init(x: targetRect.midX, y: targetRect.midY),
+            id: UUID().uuidString,
+            color: color
+        )
         balls.append(ball)
         scene.addChild(ball)
 

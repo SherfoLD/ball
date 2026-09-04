@@ -40,21 +40,36 @@ class AppController {
     // MARK: - External actions
     func dockIconClicked() {
         guard let screen = NSScreen.main else { return }
+        guard !isPuttingBallsBack else { return }
 
-        if ballVisible, NSApp.currentEvent?.modifierFlags.contains(.option) == true {
-            self.ballViewController.animatePutBack(rect: screen.inferredRectOfHoveredDockIcon) {
-                self.ballVisible = false
-            }
-            return
-        }
+        let dockIconRect = screen.inferredRectOfHoveredDockIcon
+        lastDockIconRect = dockIconRect
 
         _ = ballViewController.view
 
-        self.ballViewController.animateBallFromRect(screen.inferredRectOfHoveredDockIcon)
+        self.ballViewController.animateBallFromRect(dockIconRect)
         self.ballVisible = true
     }
 
+    var canPutAllBallsBack: Bool {
+        ballVisible && !isPuttingBallsBack
+    }
+
+    func putAllBallsBack() {
+        guard canPutAllBallsBack else { return }
+        guard let dockIconRect = lastDockIconRect else { return }
+
+        isPuttingBallsBack = true
+        self.ballViewController.animatePutBack(rect: dockIconRect) {
+            self.ballVisible = false
+            self.isPuttingBallsBack = false
+        }
+    }
+
     // MARK: - State
+    private var isPuttingBallsBack = false
+    private var lastDockIconRect: CGRect?
+
     private var ballVisible = false {
         didSet(old) {
             guard ballVisible != old else { return }

@@ -1,4 +1,5 @@
 import SpriteKit
+import CoreImage
 
 enum PhysicsCategory {
     static let ball: UInt32 = 1 << 0
@@ -6,11 +7,34 @@ enum PhysicsCategory {
 }
 
 class Ball: SKNode {
+    enum Color: CaseIterable {
+        case red
+        case orange
+        case yellow
+        case green
+        case blue
+        case purple
+        case pink
+
+        fileprivate var monochromeColor: CIColor {
+            switch self {
+            case .red: CIColor(red: 0.98, green: 0.12, blue: 0.12)
+            case .orange: CIColor(red: 1.00, green: 0.42, blue: 0.05)
+            case .yellow: CIColor(red: 1.00, green: 0.84, blue: 0.05)
+            case .green: CIColor(red: 0.12, green: 0.78, blue: 0.25)
+            case .blue: CIColor(red: 0.05, green: 0.42, blue: 0.96)
+            case .purple: CIColor(red: 0.58, green: 0.20, blue: 0.93)
+            case .pink: CIColor(red: 1.00, green: 0.20, blue: 0.55)
+            }
+        }
+    }
+
     let id: String
 
     private let imgOffsetContainer = SKNode()
     /**/ private let imgRotationContainer = SKNode()
-    /****/ private let img = SKSpriteNode(imageNamed: "Ball")
+    /****/ private let colorEffect = SKEffectNode()
+    /********/ private let img = SKSpriteNode(imageNamed: "Ball")
 
     let radius: CGFloat
 
@@ -29,7 +53,7 @@ class Ball: SKNode {
         }
     }
 
-    init(radius: CGFloat, pos: CGPoint, id: String) {
+    init(radius: CGFloat, pos: CGPoint, id: String, color: Color) {
 //        self.view = NSHostingView(rootView: BallView(shape: Circle(), radius: radius, color: Color(hex: 0xF84E35)))
 //        self.view.frame = CGRect(x: 0, y: 0, width: radius * 2, height: radius * 2)
         self.id = id
@@ -56,9 +80,19 @@ class Ball: SKNode {
 
         addChild(imgOffsetContainer)
         imgOffsetContainer.addChild(imgRotationContainer)
+        imgRotationContainer.addChild(colorEffect)
+
+        colorEffect.filter = CIFilter(
+            name: "CIColorMonochrome",
+            parameters: [
+                kCIInputColorKey: color.monochromeColor,
+                kCIInputIntensityKey: 1.0,
+            ]
+        )
+        colorEffect.shouldRasterize = true
 
         img.size = CGSize(width: radius * 2, height: radius * 2)
-        imgRotationContainer.addChild(img)
+        colorEffect.addChild(img)
 //        img.alpha = 0.01
     }
 
