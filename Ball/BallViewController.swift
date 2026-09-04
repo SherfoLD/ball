@@ -11,6 +11,7 @@ class BallViewController: NSViewController {
     let scene = SKScene(size: .init(width: 200, height: 200))
     let sceneView = SKView()
     private let physicsEngine = BallPhysicsEngine()
+    private let mouseReleaseVelocityMultiplier: CGFloat = 0.55
 
     let collisionSounds: [NSSound] = ["pop_01", "pop_02", "pop_03"].map { id in
         NSSound(contentsOf: Bundle.main.url(forResource: id, withExtension: "caf")!, byReference: true)!
@@ -131,7 +132,10 @@ class BallViewController: NSViewController {
         let velocity = dragState?.velocityTracker.velocity ?? .zero
         self.dragState = nil
 
-        ball?.simulationVelocity = CGVector(dx: velocity.x, dy: velocity.y)
+        ball?.simulationVelocity = CGVector(
+            dx: velocity.x * mouseReleaseVelocityMultiplier,
+            dy: velocity.y * mouseReleaseVelocityMultiplier
+        )
     }
 
     func onScroll(event: NSEvent) {
