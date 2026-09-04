@@ -101,12 +101,9 @@ class BallViewController: NSViewController {
         return CGPoint(x: rect.midX, y: rect.midY)
     }
 
-    func onMouseDown(ballID: String? = nil) {
+    func onMouseDown() {
         let scenePos = mouseScenePos
-        var hitBall = ball(containing: scenePos)
-        if hitBall == nil, let ballID {
-            hitBall = self.ball(withID: ballID)
-        }
+        let hitBall = ball(containing: scenePos)
         if let hitBall {
             var state = DragState(ballID: hitBall.id, ballStart: hitBall.position, mouseStart: scenePos, currentMousePos: scenePos)
             state.velocityTracker.add(pos: scenePos)
@@ -116,7 +113,7 @@ class BallViewController: NSViewController {
         }
     }
 
-    func onMouseDrag(ballID: String? = nil) {
+    func onMouseDrag() {
         if var dragState {
             dragState.currentMousePos = mouseScenePos
             dragState.velocityTracker.add(pos: dragState.currentMousePos)
@@ -124,7 +121,7 @@ class BallViewController: NSViewController {
         }
     }
 
-    func onMouseUp(ballID: String? = nil) {
+    func onMouseUp() {
         let ball: Ball?
         if let dragState {
             ball = self.ball(withID: dragState.ballID)
@@ -137,14 +134,11 @@ class BallViewController: NSViewController {
         ball?.simulationVelocity = CGVector(dx: velocity.x, dy: velocity.y)
     }
 
-    func onScroll(event: NSEvent, ballID: String? = nil) {
+    func onScroll(event: NSEvent) {
         switch event.phase {
         case .began:
             let scenePos = mouseScenePos
-            var hitBall = ball(containing: scenePos)
-            if hitBall == nil, let ballID {
-                hitBall = self.ball(withID: ballID)
-            }
+            let hitBall = ball(containing: scenePos)
             if let hitBall {
                 var state = DragState(ballID: hitBall.id, ballStart: hitBall.position, mouseStart: .zero, currentMousePos: .zero)
                 state.velocityTracker.add(pos: .zero)
@@ -263,7 +257,11 @@ class BallViewController: NSViewController {
     }
 
     private func ball(containing point: CGPoint) -> Ball? {
-        balls.reversed().first { $0.contains(point) }
+        balls.reversed().first { ball in
+            let dx = point.x - ball.position.x
+            let dy = point.y - ball.position.y
+            return dx * dx + dy * dy <= ball.radius * ball.radius
+        }
     }
 
     private func removeBall(_ ball: Ball) {

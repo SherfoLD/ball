@@ -19,10 +19,10 @@ class AppController {
         catcher.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.01).cgColor
         catcher.layer?.cornerRadius = Constants.radius
 
-        catcher.onMouseDown = { [weak self] in self?.ballViewController.onMouseDown(ballID: ballID) }
-        catcher.onMouseDrag = { [weak self] in self?.ballViewController.onMouseDrag(ballID: ballID) }
-        catcher.onMouseUp = { [weak self] in self?.ballViewController.onMouseUp(ballID: ballID) }
-        catcher.onScroll = { [weak self] in self?.ballViewController.onScroll(event: $0, ballID: ballID) }
+        catcher.onMouseDown = { [weak self] in self?.ballViewController.onMouseDown() }
+        catcher.onMouseDrag = { [weak self] in self?.ballViewController.onMouseDrag() }
+        catcher.onMouseUp = { [weak self] in self?.ballViewController.onMouseUp() }
+        catcher.onScroll = { [weak self] in self?.ballViewController.onScroll(event: $0) }
 
         let clickWindow = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: Constants.radius * 2, height: Constants.radius * 2),
