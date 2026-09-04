@@ -76,11 +76,12 @@ class AppController {
 
             ballWindowController.window!.setIsVisible(ballVisible)
 
-            ballViewController.sceneView.isPaused = !ballVisible
-
             if ballVisible {
+                ballViewController.prepareToResumeSimulation()
+                ballViewController.sceneView.isPaused = false
                 updateClickWindowPositions()
             } else {
+                ballViewController.sceneView.isPaused = true
                 for clickWindow in clickWindows.values {
                     clickWindow.setIsVisible(false)
                 }

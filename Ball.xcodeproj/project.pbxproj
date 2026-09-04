@@ -26,6 +26,7 @@
 		5F736CA7298226FF00997B93 /* MomentumValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F736CA6298226FF00997B93 /* MomentumValue.swift */; };
 		5F736CAA2982271A00997B93 /* Motion in Frameworks */ = {isa = PBXBuildFile; productRef = 5F736CA92982271A00997B93 /* Motion */; };
 		5F736CAC2982276200997B93 /* Ball.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F736CAB2982276200997B93 /* Ball.swift */; };
+		A11000012982276200997B93 /* BallPhysicsEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000002982276200997B93 /* BallPhysicsEngine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +51,7 @@
 		5F736CA4298214FE00997B93 /* InnerShadow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InnerShadow.swift; sourceTree = "<group>"; };
 		5F736CA6298226FF00997B93 /* MomentumValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentumValue.swift; sourceTree = "<group>"; };
 		5F736CAB2982276200997B93 /* Ball.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ball.swift; sourceTree = "<group>"; };
+		A11000002982276200997B93 /* BallPhysicsEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BallPhysicsEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -88,6 +90,7 @@
 				5F4617D7297F6BFD005A09A6 /* AppController.swift */,
 				5F4617B6297E1747005A09A6 /* BallViewController.swift */,
 				5F736CAB2982276200997B93 /* Ball.swift */,
+				A11000002982276200997B93 /* BallPhysicsEngine.swift */,
 				5F4617C3297E17D8005A09A6 /* BallWindowController.swift */,
 				5F4617D9297F6E59005A09A6 /* MouseCatcherView.swift */,
 				5F4617C6297E2C03005A09A6 /* DockUtils.swift */,
@@ -188,6 +191,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5F736CAC2982276200997B93 /* Ball.swift in Sources */,
+				A11000012982276200997B93 /* BallPhysicsEngine.swift in Sources */,
 				5F736CA32982144000997B93 /* BallView.swift in Sources */,
 				5F4617C7297E2C03005A09A6 /* DockUtils.swift in Sources */,
 				5F736CA5298214FE00997B93 /* InnerShadow.swift in Sources */,

@@ -1,11 +1,6 @@
 import SpriteKit
 import CoreImage
 
-enum PhysicsCategory {
-    static let ball: UInt32 = 1 << 0
-    static let wall: UInt32 = 1 << 1
-}
-
 class Ball: SKNode {
     enum Color: CaseIterable {
         case red
@@ -37,6 +32,12 @@ class Ball: SKNode {
     /********/ private let img = SKSpriteNode(imageNamed: "Ball")
 
     let radius: CGFloat
+    var simulationVelocity = CGVector.zero
+    var participatesInSimulation = true
+
+    /// Area-based mass keeps momentum correct if differently sized balls are
+    /// introduced later. The common factor (pi and density) cancels out.
+    var inverseMass: CGFloat { 1 / (radius * radius) }
 
 //    let view: NSHostingView<BallView<Circle>>
     private let shadowSprite = SKSpriteNode(imageNamed: "ContactShadow")
@@ -60,16 +61,6 @@ class Ball: SKNode {
         self.radius = radius
         super.init()
         self.position = pos
-
-        let body = SKPhysicsBody(circleOfRadius: radius)
-        body.isDynamic = true
-        body.restitution = 0.6
-        body.allowsRotation = false
-        body.usesPreciseCollisionDetection = true
-        body.categoryBitMask = PhysicsCategory.ball
-        body.collisionBitMask = PhysicsCategory.ball | PhysicsCategory.wall
-        body.contactTestBitMask = PhysicsCategory.ball | PhysicsCategory.wall
-        self.physicsBody = body
 
         addChild(shadowContainer)
         shadowContainer.addChild(shadowSprite)
@@ -129,12 +120,11 @@ class Ball: SKNode {
         imgRotationContainer.zRotation = angle
         img.zRotation = -angle
 
-        let targetScale = remap(x: strength, domainStart: 0, domainEnd: 1, rangeStart: 1, rangeEnd: 0.8)
-        let velocity = remap(x: strength, domainStart: 0, domainEnd: 1, rangeStart: -5, rangeEnd: -10)
-//        squish.animate(toValue: targetScale, velocity: velocity, completion: nil)
-
-//        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-//            self.squish.animate(toValue: 1, velocity: self.squish.velocity, completion: nil)
-//        }
+        let targetScale = remap(x: strength, domainStart: 0, domainEnd: 1, rangeStart: 1, rangeEnd: 0.98)
+        let velocity = remap(x: strength, domainStart: 0, domainEnd: 1, rangeStart: -0.5, rangeEnd: -1)
+        squish.animate(toValue: targetScale, velocity: velocity) { [weak self] finished in
+            guard finished, let self else { return }
+            self.squish.animate(toValue: 1, velocity: self.squish.velocity, completion: nil)
+        }
     }
 }
