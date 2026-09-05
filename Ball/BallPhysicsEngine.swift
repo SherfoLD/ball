@@ -16,6 +16,7 @@ final class BallPhysicsEngine {
     private let solverIterations = 10
     private let gravity = CGVector(dx: 0, dy: -1_800)
     private let ballRestitution: CGFloat = 0.72
+    private let dragMomentumTransfer: CGFloat = 0.25
     private let wallRestitution: CGFloat = 0.68
     private let friction: CGFloat = 0.22
     private let restingImpactSpeed: CGFloat = 90
@@ -112,6 +113,7 @@ final class BallPhysicsEngine {
         collisions: inout [ObjectIdentifier: Collision]
     ) {
         let activeBalls = balls.filter(\.participatesInSimulation)
+        let wallBounds = boundaryBounds(inside: bounds, obstacles: obstacles)
 
         for ball in activeBalls where ball !== draggedBall {
             ball.simulationVelocity.dx += gravity.dx * timeStep
@@ -145,7 +147,7 @@ final class BallPhysicsEngine {
             for ball in activeBalls {
                 resolveWalls(
                     for: ball,
-                    inside: bounds,
+                    inside: wallBounds,
                     isKinematic: ball === draggedBall,
                     restitutionEnabled: iteration == 0,
                     collisions: &collisions
@@ -203,7 +205,7 @@ final class BallPhysicsEngine {
             ballB.position.y += correction.dy * inverseMassB
         }
 
-        var relativeVelocity = ballB.simulationVelocity - ballA.simulationVelocity
+        var relativeVelocity = collisionVelocity(of: ballB) - collisionVelocity(of: ballA)
         let velocityAlongNormal = relativeVelocity.dot(normal)
         guard velocityAlongNormal < 0 else { return }
 
@@ -214,7 +216,7 @@ final class BallPhysicsEngine {
         apply(normalImpulse, to: ballA, inverseMass: inverseMassA, sign: -1)
         apply(normalImpulse, to: ballB, inverseMass: inverseMassB, sign: 1)
 
-        relativeVelocity = ballB.simulationVelocity - ballA.simulationVelocity
+        relativeVelocity = collisionVelocity(of: ballB) - collisionVelocity(of: ballA)
         let tangentVelocity = relativeVelocity - normal * relativeVelocity.dot(normal)
         if tangentVelocity.squaredLength > 0.0001 {
             let tangent = tangentVelocity.normalized
@@ -232,6 +234,12 @@ final class BallPhysicsEngine {
             record(ballA, normal: -normal, impactSpeed: impactSpeed, in: &collisions)
             record(ballB, normal: normal, impactSpeed: impactSpeed, in: &collisions)
         }
+    }
+
+    private func collisionVelocity(of ball: Ball) -> CGVector {
+        // Keep cursor tracking exact, but soften the push into other balls.
+        // Use the same velocity for every solver iteration and friction impulse.
+        ball.simulationVelocity * (ball.beingDragged ? dragMomentumTransfer : 1)
     }
 
     private func resolveWalls(
@@ -253,6 +261,12 @@ final class BallPhysicsEngine {
         if minX > maxX || minY > maxY {
             ball.position = CGPoint(x: bounds.midX, y: bounds.midY)
             ball.simulationVelocity = .zero
+            return
+        }
+
+        if let contact = cornerContact(at: ball.position, radius: ball.radius, bounds: bounds) {
+            ball.position = contact.position
+            bounce(ball, wallNormal: contact.normal, restitutionEnabled: restitutionEnabled, collisions: &collisions)
             return
         }
 
@@ -336,13 +350,78 @@ final class BallPhysicsEngine {
     func positionOutsideObstacles(
         _ point: CGPoint, radius: CGFloat, bounds: CGRect, obstacles: [CGRect]
     ) -> CGPoint {
-        var position = clamp(point, radius: radius, inside: bounds)
+        let wallBounds = boundaryBounds(inside: bounds, obstacles: obstacles)
+        var position = clamp(point, radius: radius, inside: wallBounds)
         for obstacle in obstacles {
             if let contact = obstacleContact(at: position, radius: radius, obstacle: obstacle, bounds: bounds) {
                 position = contact.position
             }
         }
+        if let contact = cornerContact(at: position, radius: radius, bounds: wallBounds) {
+            position = contact.position
+        }
         return position
+    }
+
+    private func boundaryBounds(inside bounds: CGRect, obstacles: [CGRect]) -> CGRect {
+        // A full-width or full-height Dock strip becomes the floor or side wall,
+        // so its junction with the screen gets the same rounded corner.
+        var minX = bounds.minX
+        var maxX = bounds.maxX
+        var minY = bounds.minY
+        for obstacle in obstacles where !obstacle.isEmpty {
+            if obstacle.minX <= bounds.minX && obstacle.maxX >= bounds.maxX &&
+                obstacle.minY <= bounds.minY && obstacle.maxY < bounds.maxY {
+                minY = max(minY, obstacle.maxY)
+            }
+            if obstacle.minY <= bounds.minY && obstacle.maxY >= bounds.maxY {
+                if obstacle.minX <= bounds.minX && obstacle.maxX < bounds.maxX {
+                    minX = max(minX, obstacle.maxX)
+                } else if obstacle.maxX >= bounds.maxX && obstacle.minX > bounds.minX {
+                    maxX = min(maxX, obstacle.minX)
+                }
+            }
+        }
+        guard minX < maxX && minY < bounds.maxY else { return bounds }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: bounds.maxY - minY)
+    }
+
+    private func cornerContact(
+        at point: CGPoint, radius: CGFloat, bounds: CGRect
+    ) -> (position: CGPoint, normal: CGVector)? {
+        let width = bounds.width - 2 * radius
+        let height = bounds.height - 2 * radius
+        guard width > 0 && height > 0 else { return nil }
+        // Quarter-circle ramps join all four edges smoothly. Scale the original
+        // corner radius down by 20%, including in small simulation regions.
+        let curveRadius = min(radius * 2, width / 2, height / 2) * 0.8
+        let bottomCenterY = bounds.minY + radius + curveRadius
+        let topCenterY = bounds.maxY - radius - curveRadius
+        let centerY: CGFloat
+        if point.y < bottomCenterY {
+            centerY = bottomCenterY
+        } else if point.y > topCenterY {
+            centerY = topCenterY
+        } else {
+            return nil
+        }
+        let leftCenterX = bounds.minX + radius + curveRadius
+        let rightCenterX = bounds.maxX - radius - curveRadius
+        let centerX: CGFloat
+        if point.x < leftCenterX {
+            centerX = leftCenterX
+        } else if point.x > rightCenterX {
+            centerX = rightCenterX
+        } else {
+            return nil
+        }
+        let delta = CGVector(dx: point.x - centerX, dy: point.y - centerY)
+        guard delta.squaredLength > curveRadius * curveRadius else { return nil }
+        let outward = delta.normalized
+        return (
+            CGPoint(x: centerX + outward.dx * curveRadius, y: centerY + outward.dy * curveRadius),
+            -outward
+        )
     }
 
     private func obstacleContact(

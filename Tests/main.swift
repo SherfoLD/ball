@@ -71,7 +71,7 @@ for (obstacle, x, speed, normal) in [(left, CGFloat(150), CGFloat(-8000), CGFloa
     check(impacts.contains { $0.normal.dx == normal }, "Side Dock collision normal")
 }
 
-let besideDock = Ball(100, 60)
+let besideDock = Ball(200, 60)
 advance(BallPhysicsEngine(), [besideDock], [tight], frames: 120)
 check(near(besideDock.position.y, 50), "Tight bounds leave space beside the Dock")
 let corner = Ball(280, 110)
@@ -87,6 +87,28 @@ crossing.beingDragged = true
 advance(BallPhysicsEngine(), [crossing], [tight], frames: 60, dragged: crossing, target: CGPoint(x: 900, y: 60))
 check(crossing.position.x <= 250.001 && !overlaps(crossing, tight), "Dragging cannot tunnel through Dock")
 
+// Dragging still separates balls, but gives them a gentle push instead of
+// launching them at cursor speed. Check either ordering in the pair solver.
+for reverseOrder in [false, true] {
+    let held = Ball(300, 400)
+    let pushed = Ball(400, 400)
+    held.beingDragged = true
+    let target = CGPoint(x: 320, y: 400)
+    advance(BallPhysicsEngine(), reverseOrder ? [pushed, held] : [held, pushed], [],
+            dragged: held, target: target)
+    check(held.position == target, "Softer collisions preserve cursor tracking")
+    check(pushed.simulationVelocity.dx > 0 && pushed.simulationVelocity.dx < 600,
+          "Dragged ball transfers less than half its 1200-point/second cursor speed")
+    check(hypot(pushed.position.x - held.position.x, pushed.position.y - held.position.y) > 99,
+          "Softer dragging still keeps balls separated")
+}
+
+let thrown = Ball(300, 400)
+let struck = Ball(400, 400)
+thrown.simulationVelocity.dx = 1200
+advance(BallPhysicsEngine(), [thrown, struck], [])
+check(struck.simulationVelocity.dx > 1000, "Free ball collisions retain their momentum transfer")
+
 let pile = (0..<5).map { Ball(500, 140 + CGFloat($0) * 105, id: String($0)) }
 advance(BallPhysicsEngine(), pile, [bottom], frames: 600)
 check(pile.allSatisfy { !overlaps($0, bottom) }, "Pile stays above Dock")
@@ -99,7 +121,64 @@ check(returning.position == CGPoint(x: 500, y: 40), "Put-back animation remains 
 let spawn = BallPhysicsEngine().positionOutsideObstacles(CGPoint(x: 20, y: 20), radius: 100, bounds: bounds, obstacles: [left])
 check(spawn.x >= 180 && spawn.y >= 100, "Launch starts clear of Dock and screen edges")
 
+// All four corners constrain dragging symmetrically and bounce free balls
+// inward. With a 50-point ball, the previous 100-point curve is now 80 points.
+for isLeft in [true, false] {
+    for isBottom in [true, false] {
+        let engine = BallPhysicsEngine()
+        let signX: CGFloat = isLeft ? 1 : -1
+        let signY: CGFloat = isBottom ? 1 : -1
+        let edgeX: CGFloat = isLeft ? 0 : bounds.maxX
+        let edgeY: CGFloat = isBottom ? 0 : bounds.maxY
+        let held = Ball(edgeX + signX * 100, edgeY + signY * 100)
+        held.beingDragged = true
+        advance(engine, [held], [], dragged: held, target: CGPoint(x: edgeX, y: edgeY))
+        let inset = 50 + 80 * (1 - 1 / sqrt(CGFloat(2)))
+        check(near(held.position.x, edgeX + signX * inset) &&
+              near(held.position.y, edgeY + signY * inset),
+              "All corner curves are 20% smaller and constrain dragging equally")
+
+        let moving = Ball(edgeX + signX * 80, edgeY + signY * 80)
+        moving.simulationVelocity = CGVector(dx: -signX * 1200, dy: -signY * 1200)
+        let impacts = advance(BallPhysicsEngine(), [moving], [])
+        check(moving.simulationVelocity.dx * signX > 0 && moving.simulationVelocity.dy * signY > 0,
+              "Free balls bounce inward at every curved corner")
+        check(impacts.contains { $0.normal.dx * signX > 0 && $0.normal.dy * signY > 0 },
+              "Corner collisions supply a diagonal inward normal")
+    }
+}
+
 let tracker = DockGeometryTracker()
+for obstacles in [[], [bottom], [left], [right]] as [[CGRect]] {
+    let floor: CGFloat = obstacles == [bottom] ? 80 : 0
+    let leftEdge: CGFloat = obstacles == [left] ? 80 : 0
+    let rightEdge: CGFloat = obstacles == [right] ? 920 : 1000
+    for fromLeft in [true, false] {
+        let edge = fromLeft ? leftEdge : rightEdge
+        let direction: CGFloat = fromLeft ? 1 : -1
+        let engine = BallPhysicsEngine()
+        let trapped = Ball(edge + direction * 80, floor + 50)
+        let pusher = Ball(edge + direction * 230, floor + 50)
+        pusher.beingDragged = true
+        _ = engine.update(at: 0, balls: [trapped, pusher], bounds: bounds,
+                          obstacles: obstacles, draggedBall: pusher, dragTarget: pusher.position)
+        for frame in 1...120 {
+            let targetX = edge + direction * (230 - min(CGFloat(frame), 60) * 160 / 60)
+            _ = engine.update(at: Double(frame) / 60, balls: [trapped, pusher], bounds: bounds,
+                              obstacles: obstacles, draggedBall: pusher,
+                              dragTarget: CGPoint(x: targetX, y: floor + 50))
+        }
+        check(trapped.position.y > pusher.position.y + 80,
+              "A ball pushed into either bottom corner must climb above the pusher")
+        check(hypot(trapped.position.x - pusher.position.x, trapped.position.y - pusher.position.y) > 99,
+              "Pushing into a bottom corner must leave balls separated")
+        check(obstacles.allSatisfy { !overlaps(trapped, $0) && !overlaps(pusher, $0) },
+              "Corner ramps must keep both balls outside the Dock")
+        advance(engine, [trapped], obstacles, frames: 240, start: 2)
+        check((trapped.position.x - edge) * direction > 110 && trapped.position.y < floor + 60,
+              "Ball rolls back toward the floor when the pusher is removed")
+    }
+}
 if let screen = NSScreen.screens.first {
     print("Live Dock geometry: \(String(describing: tracker.geometry(on: screen, at: ProcessInfo.processInfo.systemUptime)))")
 }
