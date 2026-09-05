@@ -33,6 +33,7 @@ final class BallPhysicsEngine {
         at currentTime: TimeInterval,
         balls: [Ball],
         bounds: CGRect,
+        obstacles: [CGRect] = [],
         draggedBall: Ball?,
         dragTarget: CGPoint?
     ) -> [Collision] {
@@ -70,20 +71,28 @@ final class BallPhysicsEngine {
         let simulationStep = simulatedTime / CGFloat(stepCount)
 
         var strongestCollisions: [ObjectIdentifier: Collision] = [:]
-        for stepIndex in 0..<stepCount {
+        for _ in 0..<stepCount {
             if let draggedBall, let dragStart, let clampedDragTarget {
-                let progress = CGFloat(stepIndex + 1) / CGFloat(stepCount)
-                let nextPosition = lerp(from: dragStart, to: clampedDragTarget, progress: progress)
-                draggedBall.simulationVelocity = CGVector(
-                    dx: (nextPosition.x - draggedBall.position.x) / simulationStep,
-                    dy: (nextPosition.y - draggedBall.position.y) / simulationStep
+                // Move from the last resolved position, so dragging across an
+                // obstacle slides along it instead of teleporting through it.
+                let nextPosition = CGPoint(
+                    x: draggedBall.position.x + (clampedDragTarget.x - dragStart.x) / CGFloat(stepCount),
+                    y: draggedBall.position.y + (clampedDragTarget.y - dragStart.y) / CGFloat(stepCount)
                 )
-                draggedBall.position = nextPosition
+                let constrainedPosition = positionOutsideObstacles(
+                    nextPosition, radius: draggedBall.radius, bounds: bounds, obstacles: obstacles
+                )
+                draggedBall.simulationVelocity = CGVector(
+                    dx: (constrainedPosition.x - draggedBall.position.x) / simulationStep,
+                    dy: (constrainedPosition.y - draggedBall.position.y) / simulationStep
+                )
+                draggedBall.position = constrainedPosition
             }
 
             simulateStep(
                 balls: balls,
                 bounds: bounds,
+                obstacles: obstacles,
                 draggedBall: draggedBall,
                 timeStep: simulationStep,
                 collisions: &strongestCollisions
@@ -97,6 +106,7 @@ final class BallPhysicsEngine {
     private func simulateStep(
         balls: [Ball],
         bounds: CGRect,
+        obstacles: [CGRect],
         draggedBall: Ball?,
         timeStep: CGFloat,
         collisions: inout [ObjectIdentifier: Collision]
@@ -140,6 +150,15 @@ final class BallPhysicsEngine {
                     restitutionEnabled: iteration == 0,
                     collisions: &collisions
                 )
+                for obstacle in obstacles {
+                    guard let contact = obstacleContact(
+                        at: ball.position, radius: ball.radius, obstacle: obstacle, bounds: bounds
+                    ) else { continue }
+                    ball.position = contact.position
+                    if ball !== draggedBall {
+                        bounce(ball, wallNormal: contact.normal, restitutionEnabled: iteration == 0, collisions: &collisions)
+                    }
+                }
             }
         }
     }
@@ -297,10 +316,14 @@ final class BallPhysicsEngine {
     }
 
     private func clamp(_ point: CGPoint, for ball: Ball, inside bounds: CGRect) -> CGPoint {
-        let minX = bounds.minX + ball.radius
-        let maxX = bounds.maxX - ball.radius
-        let minY = bounds.minY + ball.radius
-        let maxY = bounds.maxY - ball.radius
+        clamp(point, radius: ball.radius, inside: bounds)
+    }
+
+    private func clamp(_ point: CGPoint, radius: CGFloat, inside bounds: CGRect) -> CGPoint {
+        let minX = bounds.minX + radius
+        let maxX = bounds.maxX - radius
+        let minY = bounds.minY + radius
+        let maxY = bounds.maxY - radius
         guard minX <= maxX, minY <= maxY else {
             return CGPoint(x: bounds.midX, y: bounds.midY)
         }
@@ -310,11 +333,52 @@ final class BallPhysicsEngine {
         )
     }
 
-    private func lerp(from start: CGPoint, to end: CGPoint, progress: CGFloat) -> CGPoint {
-        CGPoint(
-            x: start.x + (end.x - start.x) * progress,
-            y: start.y + (end.y - start.y) * progress
+    func positionOutsideObstacles(
+        _ point: CGPoint, radius: CGFloat, bounds: CGRect, obstacles: [CGRect]
+    ) -> CGPoint {
+        var position = clamp(point, radius: radius, inside: bounds)
+        for obstacle in obstacles {
+            if let contact = obstacleContact(at: position, radius: radius, obstacle: obstacle, bounds: bounds) {
+                position = contact.position
+            }
+        }
+        return position
+    }
+
+    private func obstacleContact(
+        at point: CGPoint, radius: CGFloat, obstacle: CGRect, bounds: CGRect
+    ) -> (position: CGPoint, normal: CGVector)? {
+        guard !obstacle.isEmpty else { return nil }
+        let closest = CGPoint(
+            x: min(max(point.x, obstacle.minX), obstacle.maxX),
+            y: min(max(point.y, obstacle.minY), obstacle.maxY)
         )
+        let delta = CGVector(dx: point.x - closest.x, dy: point.y - closest.y)
+        guard delta.squaredLength < radius * radius else { return nil }
+
+        // Only project toward exits that keep the whole ball on screen. This
+        // also recovers balls caught inside a Dock that appeared or grew.
+        let allowed = bounds.insetBy(dx: radius, dy: radius)
+        func fits(_ position: CGPoint) -> Bool {
+            position.x >= allowed.minX && position.x <= allowed.maxX &&
+                position.y >= allowed.minY && position.y <= allowed.maxY
+        }
+        if delta.squaredLength > 0.0001 {
+            let normal = delta.normalized
+            let position = CGPoint(x: closest.x + normal.dx * radius, y: closest.y + normal.dy * radius)
+            if fits(position) { return (position, normal) }
+        }
+
+        let exits: [(position: CGPoint, normal: CGVector)] = [
+            (CGPoint(x: point.x, y: obstacle.maxY + radius), CGVector(dx: 0, dy: 1)),
+            (CGPoint(x: obstacle.maxX + radius, y: point.y), CGVector(dx: 1, dy: 0)),
+            (CGPoint(x: obstacle.minX - radius, y: point.y), CGVector(dx: -1, dy: 0)),
+            (CGPoint(x: point.x, y: obstacle.minY - radius), CGVector(dx: 0, dy: -1))
+        ]
+        return exits.filter { fits($0.position) }.min {
+            CGVector(dx: $0.position.x - point.x, dy: $0.position.y - point.y).squaredLength <
+                CGVector(dx: $1.position.x - point.x, dy: $1.position.y - point.y).squaredLength
+        }
     }
 }
 

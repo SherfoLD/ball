@@ -11,6 +11,7 @@ class BallViewController: NSViewController {
     let scene = SKScene(size: .init(width: 200, height: 200))
     let sceneView = SKView()
     private let physicsEngine = BallPhysicsEngine()
+    private let dockGeometryTracker = DockGeometryTracker()
     private let mouseReleaseVelocityMultiplier: CGFloat = 0.55
 
     let collisionSounds: [NSSound] = ["pop_01", "pop_02", "pop_03"].map { id in
@@ -57,6 +58,17 @@ class BallViewController: NSViewController {
 
     func prepareToResumeSimulation() {
         physicsEngine.resetClock()
+        dockGeometryTracker.invalidate()
+    }
+
+    private func dockObstacles() -> [CGRect] {
+        guard let window = view.window, let screen = window.screen,
+              let dock = dockGeometryTracker.geometry(on: screen, at: ProcessInfo.processInfo.systemUptime) else { return [] }
+        let viewRect = sceneView.convert(window.convertFromScreen(dock.rect), from: nil)
+        let first = scene.convertPoint(fromView: viewRect.origin)
+        let second = scene.convertPoint(fromView: CGPoint(x: viewRect.maxX, y: viewRect.maxY))
+        return [CGRect(x: min(first.x, second.x), y: min(first.y, second.y),
+                       width: abs(second.x - first.x), height: abs(second.y - first.y))]
     }
 
     // MARK: - Mouse handling
@@ -187,10 +199,16 @@ class BallViewController: NSViewController {
         targetRect = targetRect.byConstraining(withinBounds: screen.frame)
 
         let spawnIndex = balls.count
+        let windowRect = view.window!.convertFromScreen(targetRect)
+        let viewPoint = sceneView.convert(CGPoint(x: windowRect.midX, y: windowRect.midY), from: nil)
+        let spawnPoint = physicsEngine.positionOutsideObstacles(
+            scene.convertPoint(fromView: viewPoint), radius: Constants.radius,
+            bounds: view.bounds, obstacles: dockObstacles()
+        )
         let color = Ball.Color.allCases.randomElement() ?? .red
         let ball = Ball(
             radius: Constants.radius,
-            pos: .init(x: targetRect.midX, y: targetRect.midY),
+            pos: spawnPoint,
             id: UUID().uuidString,
             color: color
         )
@@ -222,7 +240,7 @@ class BallViewController: NSViewController {
 
         ball.animateShadow(visible: true, duration: 0.5)
 
-        ball.position = CGPoint(x: targetRect.midX, y: targetRect.midY)
+        ball.position = spawnPoint
         ball.simulationVelocity = launchVelocity
 
         return ball
@@ -281,6 +299,7 @@ extension BallViewController: SKSceneDelegate {
             at: currentTime,
             balls: balls,
             bounds: view.bounds,
+            obstacles: dockObstacles(),
             draggedBall: draggedBall,
             dragTarget: currentDragTarget
         )

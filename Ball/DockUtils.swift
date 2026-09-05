@@ -1,78 +1,113 @@
-// From https://gist.github.com/wonderbit/c8896ff429a858021a7623f312dcdbf9
-
 import AppKit
 
-enum WBDockPosition: Int {
-    case bottom = 0
-    case left = 1
-    case right = 2
-}
+/// Screen-space Dock geometry. AppKit coordinates have their origin at the
+/// bottom left; Window Server coordinates start at the primary display's top left.
+struct DockGeometry {
+    enum Position {
+        case bottom, left, right
+    }
 
-func getDockPosition() -> WBDockPosition {
-    if NSScreen.main!.visibleFrame.origin.y == 0 {
-        if NSScreen.main!.visibleFrame.origin.x == 0 {
-            return .right
-        } else {
-            return .left
+    let rect: CGRect
+    let position: Position
+
+    /// visibleFrame tells us the Dock's thickness, but not its length. Ignore
+    /// the top inset (menu bar) and the one-point auto-hide activation strip.
+    static func reservedArea(frame: CGRect, visibleFrame: CGRect) -> DockGeometry? {
+        let bottom = visibleFrame.minY - frame.minY
+        let left = visibleFrame.minX - frame.minX
+        let right = frame.maxX - visibleFrame.maxX
+        if bottom > 1 {
+            return DockGeometry(rect: CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: bottom), position: .bottom)
         }
-    } else {
-        return .bottom
+        if left > 1 {
+            return DockGeometry(rect: CGRect(x: frame.minX, y: frame.minY, width: left, height: frame.height), position: .left)
+        }
+        if right > 1 {
+            return DockGeometry(rect: CGRect(x: visibleFrame.maxX, y: frame.minY, width: right, height: frame.height), position: .right)
+        }
+        return nil
+    }
+
+    static func appKitRect(from windowRect: CGRect, primaryScreenTop: CGFloat) -> CGRect {
+        CGRect(x: windowRect.minX, y: primaryScreenTop - windowRect.maxY, width: windowRect.width, height: windowRect.height)
+    }
+
+    /// Some macOS versions expose a tight Dock window; others report a
+    /// full-screen surface. Never use that as an obstacle.
+    static func windowArea(_ rect: CGRect, on frame: CGRect) -> DockGeometry? {
+        let clipped = rect.intersection(frame)
+        guard !clipped.isEmpty, !clipped.isNull else { return nil }
+        if clipped.width > clipped.height, clipped.height > 1, clipped.height < frame.height / 2,
+           abs(clipped.minY - frame.minY) <= 1 {
+            return DockGeometry(rect: clipped, position: .bottom)
+        }
+        if clipped.height > clipped.width, clipped.width > 1, clipped.width < frame.width / 2 {
+            if abs(clipped.minX - frame.minX) <= 1 {
+                return DockGeometry(rect: clipped, position: .left)
+            }
+            if abs(clipped.maxX - frame.maxX) <= 1 {
+                return DockGeometry(rect: clipped, position: .right)
+            }
+        }
+        return nil
     }
 }
 
-func getDockSize() -> CGFloat {
-    let dockPosition = getDockPosition()
-    switch dockPosition {
-    case .right:
-        let size = NSScreen.main!.frame.width - NSScreen.main!.visibleFrame.width
-        return size
-    case .left:
-        let size = NSScreen.main!.visibleFrame.origin.x
-        return size
-    case .bottom:
-        let size = NSScreen.main!.visibleFrame.origin.y
-        return size
+/// Query at most ten times per second, independent of the 240 Hz physics step.
+/// Bounds and owner PID are sufficient; no window titles, screenshots or
+/// Accessibility permission are needed.
+final class DockGeometryTracker {
+    private var nextRefresh: TimeInterval = 0
+    private var windowRects: [CGRect] = []
+
+    func invalidate() {
+        nextRefresh = 0
+    }
+
+    func geometry(on screen: NSScreen, at time: TimeInterval) -> DockGeometry? {
+        if time >= nextRefresh {
+            nextRefresh = time + 0.1
+            windowRects = Self.readWindowRects()
+        }
+        let reserved = DockGeometry.reservedArea(frame: screen.frame, visibleFrame: screen.visibleFrame)
+        let measured = windowRects.compactMap { DockGeometry.windowArea($0, on: screen.frame) }
+            .filter { reserved == nil || $0.position == reserved?.position }
+            .max { $0.rect.width * $0.rect.height < $1.rect.width * $1.rect.height }
+        return measured ?? reserved
+    }
+
+    private static func readWindowRects() -> [CGRect] {
+        guard let primary = NSScreen.screens.first,
+              let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first,
+              let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] else { return [] }
+        return windows.compactMap { window in
+            guard let pid = window[kCGWindowOwnerPID as String] as? NSNumber, pid.int32Value == dock.processIdentifier,
+                  let layer = window[kCGWindowLayer as String] as? NSNumber, layer.int32Value == CGWindowLevelForKey(.dockWindow),
+                  let alpha = window[kCGWindowAlpha as String] as? NSNumber, alpha.doubleValue > 0,
+                  let bounds = window[kCGWindowBounds as String] as? [String: Any],
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+            return DockGeometry.appKitRect(from: rect, primaryScreenTop: primary.frame.maxY)
+        }
     }
 }
-
-func isDockHidden() -> Bool {
-    let dockSize = getDockSize()
-
-    if dockSize < 25 {
-        return true
-    } else {
-        return false
-    }
-}
-
-// From me
 
 extension NSScreen {
-//    var dockRect: CGRect {
-//        let dockPosition = getDockPosition()
-//        let dockSize = getDockSize()
-//        // Dock is centered along its edge
-//        switch dockPosition {
-//            case .bottom:
-//                return CGRect(x: frame.minX + (frame.width - dockSize.width) / 2, y: frame.maxY - dockSize.height, width: dockSize.width, height: dockSize)
-//            case .left:
-//                return CGRect(x: frame.minX, y: frame.minY + (frame.height - dockSize.height) / 2, width: dockSize, height: dockSize.height)
-//            case .right:
-//                return CGRect(x: frame.maxX - dockSize, y: frame.minY + (frame.height - dockSize.height) / 2, width: dockSize, height: dockSize.height)
-//        }
-//    }
-
     var inferredRectOfHoveredDockIcon: CGRect {
-        // Keep in mind coords are inverted (y=0 at bottom)
-        let dockSize = getDockSize()
-        let dockPos = getDockPosition()
-        let tileSize = dockSize * (64.0 / 79.0)
-        // First, set center to the mouse pos
+        let geometry = DockGeometryTracker().geometry(on: self, at: 0)
+        let position = geometry?.position ?? .bottom
+        let thickness: CGFloat
+        switch position {
+        case .bottom: thickness = geometry?.rect.height ?? 79
+        case .left, .right: thickness = geometry?.rect.width ?? 79
+        }
+        let tileSize = thickness * (64.0 / 79.0)
         var center = NSEvent.mouseLocation
-        if dockPos == .bottom {
-            center.y = frame.minY + tileSize / 2
-            // Dock icons are a little above the center of the dock rect
-            center.y += 2.5 / 79 * dockSize
+        // Retain the click-based icon estimate for the launch animation.
+        let inset = tileSize / 2 + 2.5 / 79 * thickness
+        switch position {
+        case .bottom: center.y = frame.minY + inset
+        case .left: center.x = frame.minX + inset
+        case .right: center.x = frame.maxX - inset
         }
         return CGRect(x: center.x - tileSize / 2, y: center.y - tileSize / 2, width: tileSize, height: tileSize)
     }
