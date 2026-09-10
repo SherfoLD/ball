@@ -1,21 +1,29 @@
-![Screen recording of a ball bouncing](Recording.gif)
-
 # Ball
 
-It's a little ball that lives in your dock. You can drag it and it'll bounce around the screen. You can also swipe on it with two fingers. It comes in red. You can flick it, bounce it, try to make it hit the corner, see how many times it can bounce, count how many times it hits the wall, and more. It's a ball. It's fun. It's a ball.
+Ball is a small macOS app that puts a bouncy ball in your Dock. Click the app’s Dock icon to launch a ball onto the screen, then drag it, flick it, or swipe it with two fingers.
 
-**Download in [Releases](https://github.com/nate-parrott/ball/releases)**
+Launch it again to add another ball. Each new ball gets a random color, and the balls collide with one another, the edges of the screen, and the Dock. Leave a few running and they settle into a surprisingly satisfying little pile.
+
+[Watch the demo](balls.mp4)
+
+**Download the latest build from [Releases](https://github.com/SherfoLD/ball/releases).**
+
+## Build and run
+
+Open `Ball.xcodeproj` in Xcode and run the `Ball` target. The app is sandboxed and does not need any extra permissions.
+
+To run the headless Dock geometry and physics checks on macOS:
+
+```sh
+./Tests/run.sh
+```
 
 ## Credits
 
-It's inspired by [Nate Heagy's](https://heagy.com/) widget for the OS X Dashboard, which I remember fondly because someone put it on our class [eMac](https://en.wikipedia.org/wiki/EMac) in fifth grade. It was a lot bouncier and come in more colors, but it didn't go in the dock!
+This project started as [Nate Parrott’s original Ball app](https://github.com/nate-parrott/ball). The idea was inspired by [Nate Heagy’s](https://heagy.com/) OS X Dashboard widget, which the original author remembers from an elementary-school eMac. This version builds on that idea with multiple colored balls and ball-to-ball collisions.
 
-Credit also goes to Wessley Roche, who made this [little Gist](https://gist.github.com/wonderbit/c8896ff429a858021a7623f312dcdbf9) explaining how to get the position of the dock. I've [extended this](https://github.com/nate-parrott/ball/blob/main/Ball/DockUtils.swift#L65) to try to estimate the position of the app's dock icon when it's clicked, so the ball can animate out of it. 
+The Dock-positioning work also builds on [Wessley Roche’s Gist](https://gist.github.com/wonderbit/c8896ff429a858021a7623f312dcdbf9), with further changes in [`DockUtils.swift`](Ball/DockUtils.swift).
 
-Balls bounce off the Dock and cannot be dragged into its reserved screen area. Dock bounds refresh while the simulation runs, supporting bottom, left, and right positions. When macOS exposes a tight Dock window, collisions use those bounds; otherwise, they protect the full strip reserved by `NSScreen.visibleFrame`. The app keeps its existing sandbox and needs no extra permissions. Magnified icons and temporary auto-hide reveals can extend beyond the bounds macOS reports, so the fallback cannot cover those reliably.
+## License
 
-Run `Tests/run.sh` on macOS for the headless Dock geometry and physics regression checks. The harness compiles the production solver with a rendering-free ball model; build the app with Xcode to check the SpriteKit integration.
-
-## Final words
-
-I hope you enjoy this little ball.
+See [LICENSE](LICENSE).
