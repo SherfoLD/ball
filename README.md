@@ -4,7 +4,7 @@ Ball is a small macOS app that puts a bouncy ball in your Dock. Click the app’
 
 Launch it again to add another ball. Each new ball gets a random color, and the balls collide with one another, the edges of the screen, and the Dock. Leave a few running and they settle into a surprisingly satisfying little pile.
 
-[Watch the demo](balls.mp4)
+[Watch the demo](balls.gif)
 
 **Download the latest build from [Releases](https://github.com/SherfoLD/ball/releases).**
 
