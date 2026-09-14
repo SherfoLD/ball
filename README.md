@@ -1,12 +1,16 @@
 # Ball
 
-Ball is a small macOS app that puts a bouncy ball in your Dock. Click the app’s Dock icon to launch a ball onto the screen, then drag it, flick it, or swipe it with two fingers.
-
-Launch it again to add another ball. Each new ball gets a random color, and the balls collide with one another, the edges of the screen, and the Dock. Leave a few running and they settle into a surprisingly satisfying little pile.
+Bouncy balls on your desktop with proper physics and collisions.
 
 ![Screen recording of a balls bouncing](balls.gif)
 
 **Download the latest build from [Releases](https://github.com/SherfoLD/ball/releases).**
+
+Then remove quarantine from the app:
+
+```sh
+xattr -cr /Applications/Ball.app
+```
 
 ## Build and run
 
